@@ -1,11 +1,15 @@
+from telebot import types
 from telebot.async_telebot import AsyncTeleBot
 import os
 from dotenv import load_dotenv, find_dotenv
-from main import get_events, get_communities
 
+from inline_buttons import init_keyboard
+from inline_buttons.inline_buttons import link_to_menu_keyboard, menu_keyboard
+from main import get_tree_nearest_events, all_groups, get_current_week_events, get_next_week_events
+from utils import get_date_string
 
 load_dotenv(find_dotenv())
-#Забираем токен подключения, данные для подключения к БД
+#  Забираем токен подключения, данные для подключения к БД
 DATABASE_URL= os.environ.get('DATABASE_URL')
 DATABASE_USER= os.environ.get('DATABASE_USER')
 DATABASE_PASSWORD= os.environ.get('DATABASE_PASSWORD')
@@ -15,37 +19,140 @@ BOT_TOKEN = os.environ.get('BOT_TOKEN')
 bot = AsyncTeleBot(BOT_TOKEN)
 
 
-
 @bot.message_handler(commands=["start"])
-async def send_welcome(message):
-    events = get_events()
-    event_list = ""
-    for i, event in enumerate(events, start = 1):
-        post_link = f'<a href="{event[0]}">Ссылка на пост</a>'
-        event_list += f"{post_link} - {event[1]}\n"
-    await bot.reply_to(
-        message,
-        f"Привет! Я Levart Bot. С моей помощью ты будешь в курсе всех доступных мне мероприятий и ивентов!\n"
-        f"В ближайшее время доступны следующие мероприятия:\n{event_list}",
+async def send_welcome(message: types.Message):
+    await bot.delete_message(message.chat.id, message.message_id)
+    await bot.send_message(
+        message.chat.id,
+        """
+        Добро пожаловать! 
+
+Я собираю ближайшие мероприятия ИТМО и отдаю краткую сводку, которую ты сможешь изучить за 3 минуты. 
+
+Больше не нужно самим искать «то самое мероприятие» и тратить свое время.
+
+Просто попробуй.""",
+        reply_markup = init_keyboard
+    )
+
+
+@bot.message_handler(regexp=r"^Меню")
+async def menu(message: types.Message):
+    await bot.delete_message(message.chat.id, message.message_id)
+    await bot.send_message(
+        message.chat.id,
+        "Выберите опцию:",
+        disable_web_page_preview=True,
+        reply_markup=menu_keyboard
+    )
+
+
+@bot.message_handler(regexp=r"^Ближайшие мероприятия")
+async def send_tree_nearest_events(message):
+    pre_speech = "Levart подобрал анонсы самых ближайших мероприятий:"
+    events = get_tree_nearest_events()
+    event_list = []
+    for i, event in enumerate(events, start=1):
+        post_url = event[0]
+        event_title = event[1]
+        event_date = get_date_string(event[2])
+        event_place = f"📍 {event[3]}" if event[3] else ""
+        event_short_desc = event[4]
+        comm_name = event[6]
+        event_text = \
+            f"\n\n⚡️{comm_name} | <a href='{post_url}'>{event_title}</a>" \
+            f"\n🗓 {event_date} {event_place}" \
+            f"\n{event_short_desc}"
+        event_list.append(event_text)
+    await bot.send_message(
+        message.chat.id,
+        f"{pre_speech}"
+        f"{''.join(event_list)}",
         parse_mode="HTML",
-        disable_web_page_preview=False
+        disable_web_page_preview=True,
+        reply_markup=link_to_menu_keyboard
     )
 
 
-@bot.message_handler(commands=["groups_info"])
+@bot.message_handler(regexp=r"^Текущая неделя")
+async def current_week_events(message):
+    pre_speech = "Анонсы мероприятий на ТЕКУЩУЮ неделю:"
+    events = get_current_week_events()
+    event_list = []
+    for i, event in enumerate(events, start=1):
+        post_url = event[0]
+        event_title = event[1]
+        event_date = get_date_string(event[2])
+        event_place = f"📍 {event[3]}" if event[3] else ""
+        event_short_desc = event[4]
+        comm_name = event[6]
+        event_text = \
+            f"\n\n⚡️{comm_name} | <a href='{post_url}'>{event_title}</a>" \
+            f"\n🗓 {event_date} {event_place}" \
+            f"\n{event_short_desc}"
+        event_list.append(event_text)
+    await bot.send_message(
+        message.chat.id,
+        f"{pre_speech}"
+        f"{''.join(event_list)}",
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+        reply_markup=link_to_menu_keyboard
+    )
+
+
+@bot.message_handler(regexp=r"^Следующая неделя")
+async def next_week_events(message):
+    pre_speech = "Анонсы мероприятий на СЛЕДУЮЩУЮ неделю:"
+    events = get_next_week_events()
+    event_list = []
+    for i, event in enumerate(events, start=1):
+        post_url = event[0]
+        event_title = event[1]
+        event_date = get_date_string(event[2])
+        event_place = f"📍 {event[3]}" if event[3] else ""
+        event_short_desc = event[4]
+        comm_name = event[6]
+        event_text = \
+            f"\n\n⚡️{comm_name} | <a href='{post_url}'>{event_title}</a>" \
+            f"\n🗓 {event_date} {event_place}" \
+            f"\n{event_short_desc}"
+        event_list.append(event_text)
+    await bot.send_message(
+        message.chat.id,
+        f"{pre_speech}"
+        f"{''.join(event_list)}",
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+        reply_markup=link_to_menu_keyboard
+    )
+
+
+@bot.message_handler(regexp=r"^Источники мероприятий")
 async def send_groups_info(message):
-    communities = get_communities()
-    communities_list = "\n".join([i[0] for i in communities])
-    await bot.reply_to(
-        message,
-        f"На данный момент нам доступны сообщества:\n{communities_list}"
+    communities = all_groups
+    communities_list = []
+    for i in communities:
+        communities_text = f" 🌐 {i[0]}"
+        communities_list.append(communities_text)
+    communities_text = "\n".join(communities_list)
+    await bot.send_message(
+        message.chat.id,
+        f"На данный момент нам доступны сообщества:\n\n{communities_text}",
+        disable_web_page_preview=True,
+        reply_markup=link_to_menu_keyboard
     )
-    
 
 
-@bot.message_handler(func=lambda msg:True)
-async def echo_all(message):
-    await bot.reply_to(message, message.text)
+@bot.message_handler()
+async def echo_all(message: types.Message):
+    await bot.delete_message(message.chat.id, message.message_id)
+    await bot.send_message(
+        message.chat.id,
+        "Меню:",
+        disable_web_page_preview=True,
+        reply_markup=link_to_menu_keyboard
+    )
 
 
 print("bot started >>> GO,GO,GO!")
